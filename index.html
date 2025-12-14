@@ -2,12 +2,10 @@
 <html lang="zh-Hant">
 <head>
   <meta charset="UTF-8" />
-  <title>殘酷2選1版</title>
   <title>光譜好友猜測遊戲（殘酷2選1版）</title>
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <style>
     body {
-      font-family: sans-serif;
       font-family: 'Arial', sans-serif;
       padding: 20px;
       background-color: #f0f8ff; /* 背景顏色 */
@@ -31,8 +29,6 @@
 
     .spectrum button, .guessing button {
       margin: 4px;
-      padding: 10px;
-      margin: 10px;
       padding: 12px 24px;
       font-size: 1.1em;
       border-radius: 5px;
@@ -48,7 +44,6 @@
     }
 
     .player {
-      margin: 4px 0;
       margin: 6px 0;
       font-size: 1.1em;
       background-color: #eeeeee;
@@ -76,7 +71,6 @@
       border-radius: 5px;
       border-left: 5px solid #2196F3;
     }
-    .scoreboard {
 
     #players {
       margin-top: 20px;
@@ -104,7 +98,6 @@
 
 <body>
 
-<h1>🎮 殘酷2選1版</h1>
 <h1>🎮 光譜好友猜測遊戲（殘酷2選1版）</h1>
 
 <!-- ========== 加入房間 ========== -->
@@ -125,10 +118,7 @@
   <h2 id="roomTitle"></h2>
 
   <h3>STEP 1｜題目</h3>
-  <p>
-    出門旅行時，我比較偏向<br />
-    【完全排好行程】 ─────────── 【隨走隨玩】
-  </p>
+  <p id="question"></p>
 
   <div id="spectrum" class="spectrum">
     <button onclick="submitAnswer(0)">左</button>
@@ -150,7 +140,7 @@
   <div id="players"></div>
 
   <!-- 顯示玩家得分 -->
-  <div id="scoreboard" class="scoreboard">
+  <div id="scoreboard">
     <h3>玩家得分</h3>
     <div id="scoreList"></div>
   </div>
@@ -159,19 +149,13 @@
 <!-- ========== Firebase ========== -->
 <script type="module">
   import { initializeApp } from "https://www.gstatic.com/firebasejs/9.23.0/firebase-app.js";
-  import {
-    getDatabase,
-    ref,
-    set,
-    onValue,
-    get
-  } from "https://www.gstatic.com/firebasejs/9.23.0/firebase-database.js";
+  import { getDatabase, ref, set, onValue, get } from "https://www.gstatic.com/firebasejs/9.23.0/firebase-database.js";
 
   // 🔴 你的 Firebase 設定（照原樣放）
   const firebaseConfig = {
     apiKey: "AIzaSyAd5o0ZVF5D-_jZ_e_JfV4bLtJExFemQ2E",
     authDomain: "leftorright-2a953.firebaseapp.com",
-    databaseURL: "https://leftorright-2a953-default-rtdb.firebaseio.com",
+    databaseURL: "https://leftorright-2a953-default-rtdb.firebaseio.com/",
     projectId: "leftorright-2a953",
     storageBucket: "leftorright-2a953.firebasestorage.app",
     messagingSenderId: "360483191218",
@@ -184,8 +168,8 @@
   // ===== 狀態 =====
   let roomId = "";
   let playerName = "";
-  let focusPlayerName = "";  // 新增：焦點玩家名稱
-  let playerScores = {};  // 玩家得分
+  let focusPlayerName = ""; // 焦點玩家名稱
+  let playerScores = {}; // 玩家分數
 
   // ===== 加入房間 =====
   window.joinRoom = function () {
@@ -221,6 +205,16 @@
       });
     });
 
+    // 監聽題目和選項
+    const questionsRef = ref(db, `rooms/${roomId}/questions`);
+    onValue(questionsRef, (snapshot) => {
+      if (snapshot.exists()) {
+        const questions = snapshot.val();
+        const question = questions[Math.floor(Math.random() * questions.length)];
+        document.getElementById("question").innerHTML = question.question + "<br/>【" + question.options[0] + "】 ─────────── 【" + question.options[1] + "】";
+      }
+    });
+
     // 監聽焦點玩家
     const focusRef = ref(db, `rooms/${roomId}/focusPlayer`);
     onValue(focusRef, (snapshot) => {
@@ -229,21 +223,18 @@
         document.getElementById("focus").innerText = "🎯 本題焦點人物：" + focusPlayerName;
       }
     });
-
-    // 設置房間活動計時器，30分鐘無活動則清除房間
-    setupRoomCleanup();
   };
 
-  // ===== 提交光譜答案 =====
+  // ===== 提交答案 =====
   window.submitAnswer = function (value) {
     const answerRef = ref(db, `rooms/${roomId}/answers/${playerName}`);
     set(answerRef, value);
     document.getElementById("status").innerText = "✅ 已送出答案（不公開）";
-    trySetFocusPlayer();  // 設定焦點玩家
-    startGuessing();  // 開始猜測模式
+    trySetFocusPlayer(); // 設定焦點玩家
+    startGuessing(); // 開始猜測模式
   };
 
-  // ===== STEP 2：指定焦點玩家（只做一次） =====
+  // ===== 設定焦點玩家 =====
   function trySetFocusPlayer() {
     const playersRef = ref(db, `rooms/${roomId}/players`);
     const focusRef = ref(db, `rooms/${roomId}/focusPlayer`);
@@ -272,43 +263,32 @@
     const guessRef = ref(db, `rooms/${roomId}/guesses/${playerName}`);
     set(guessRef, guessValue);
     document.getElementById("status").innerText = "✅ 已提交猜測";
-
-    // 計算分數
-    calculateScores();
+    calculateScores(); // 計算分數
   };
 
   // 計算分數
-  // 顯示結果（焦點玩家和猜測）
   function calculateScores() {
     const answersRef = ref(db, `rooms/${roomId}/answers`);
     const guessesRef = ref(db, `rooms/${roomId}/guesses`);
     const playersRef = ref(db, `rooms/${roomId}/players`);
 
-    
     onValue(answersRef, (snapshot) => {
       if (!snapshot.exists()) return;
       const answers = snapshot.val();
+
       onValue(guessesRef, (guessSnapshot) => {
         if (!guessSnapshot.exists()) return;
         const guesses = guessSnapshot.val();
         if (!answers || !guesses) return;
 
-        // 遍歷每個玩家，計算分數
         Object.keys(answers).forEach((player) => {
           let score = 0;
-          // 判斷答案是否與猜測一致
           if (answers[player] === guesses[player]) score++;
 
-          // 更新分數到 Firebase
           const playerRef = ref(db, `rooms/${roomId}/players/${player}`);
           set(playerRef, { score });
 
-          // 更新玩家分數顯示
-          if (answers[player] === guesses[player]) {
-            score++;
-          }
           playerScores[player] = score;
-          updateScoreboard();
         });
 
         updateScoreboard();
@@ -317,7 +297,6 @@
   }
 
   // 更新分數顯示
-  // 更新分數板
   function updateScoreboard() {
     const scoreList = document.getElementById("scoreList");
     scoreList.innerHTML = "";
@@ -329,22 +308,6 @@
       div.innerText = `${player}: ${playerScores[player]} 分`;
       scoreList.appendChild(div);
     });
-  }
-
-  // 設置房間清理邏輯，30分鐘內無活動則刪除房間
-  function setupRoomCleanup() {
-    const roomRef = ref(db, `rooms/${roomId}`);
-    const lastActivityRef = ref(db, `rooms/${roomId}/lastActivity`);
-    set(lastActivityRef, Date.now());
-
-    setInterval(() => {
-      get(lastActivityRef).then((snapshot) => {
-        if (snapshot.exists() && Date.now() - snapshot.val() > 30 * 60 * 1000) {
-          set(roomRef, null);  // 清除房間資料
-          alert("房間已超過30分鐘無活動，已自動清除！");
-        }
-      });
-    }, 60000);  // 每分鐘檢查一次
   }
 
 </script>
