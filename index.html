@@ -110,6 +110,11 @@
     暱稱：
     <input id="nameInput" placeholder="你的名字" />
   </p>
+  <p>
+    最大人數：
+    <input id="maxPlayersInput" type="number" placeholder="最多人數" />
+  </p>
+  <button onclick="createRoom()">創建房間</button>
   <button onclick="joinRoom()">加入房間</button>
 </div>
 
@@ -181,26 +186,32 @@
   let allPlayersGuessed = false;
   let playerScores = {};
   let currentQuestionId = "";
+  let maxPlayers = 0;
+  let currentPlayerCount = 0;
 
-  // ===== 加入房間 =====
-  window.joinRoom = function () {
+  // ===== 創建房間 =====
+  window.createRoom = function () {
     roomId = document.getElementById("roomInput").value.trim();
     playerName = document.getElementById("nameInput").value.trim();
+    maxPlayers = parseInt(document.getElementById("maxPlayersInput").value.trim());
 
-    if (!roomId || !playerName) {
-      alert("請輸入房間代碼與暱稱");
+    if (!roomId || !playerName || isNaN(maxPlayers) || maxPlayers <= 0) {
+      alert("請填寫房間代碼、暱稱及最大人數");
       return;
     }
+
+    const roomRef = ref(db, `rooms/${roomId}`);
+    set(roomRef, {
+      maxPlayers: maxPlayers,
+      currentPlayerCount: 1,
+      players: {
+        [playerName]: { score: 0, joinedAt: Date.now() }
+      }
+    });
 
     document.getElementById("join").classList.add("hidden");
     document.getElementById("game").classList.remove("hidden");
     document.getElementById("roomTitle").innerText = "房間：" + roomId;
-
-    const playerRef = ref(db, `rooms/${roomId}/players/${playerName}`);
-    set(playerRef, {
-      joinedAt: Date.now(),
-      score: 0
-    });
 
     // 監聽玩家列表
     const playersRef = ref(db, `rooms/${roomId}/players`);
@@ -214,42 +225,69 @@
         div.innerText = "👤 " + name;
         list.appendChild(div);
       });
-    });
 
-    // 讀取題目並顯示
-    loadQuestion();
-
-    // 監聽焦點玩家
-    const focusRef = ref(db, `rooms/${roomId}/focusPlayer`);
-    onValue(focusRef, (snapshot) => {
-      if (snapshot.exists()) {
-        focusPlayerName = snapshot.val();
+      // 檢查是否達到最大人數
+      currentPlayerCount = Object.keys(data).length;
+      if (currentPlayerCount >= maxPlayers) {
+        startGame(); // 開始遊戲
       }
     });
   };
 
-  // ===== 讀取並顯示題目 =====
-  function loadQuestion() {
-    const roomRef = ref(db, `rooms/${roomId}`);
-    
-    // 讀取當前房間的題目 ID
-    get(roomRef).then((snapshot) => {
-      const roomData = snapshot.val();
-      if (roomData && roomData.currentQuestionId) {
-        currentQuestionId = roomData.currentQuestionId;
+  // ===== 加入房間 =====
+  window.joinRoom = function () {
+    roomId = document.getElementById("roomInput").value.trim();
+    playerName = document.getElementById("nameInput").value.trim();
 
-        // 讀取題目內容
-        const questionRef = ref(db, `questions/${currentQuestionId}`);
-        get(questionRef).then((questionSnapshot) => {
-          const questionData = questionSnapshot.val();
-          if (questionData) {
-            // 顯示題目
-            document.getElementById("questionText").innerText = questionData.questionText;
-            document.getElementById("leftOption").innerText = `【${questionData.leftOption}】`;
-            document.getElementById("rightOption").innerText = `【${questionData.rightOption}】`;
-          }
-        });
+    if (!roomId || !playerName) {
+      alert("請輸入房間代碼與暱稱");
+      return;
+    }
+
+    const playerRef = ref(db, `rooms/${roomId}/players/${playerName}`);
+    set(playerRef, {
+      joinedAt: Date.now(),
+      score: 0
+    });
+
+    document.getElementById("join").classList.add("hidden");
+    document.getElementById("game").classList.remove("hidden");
+    document.getElementById("roomTitle").innerText = "房間：" + roomId;
+
+    // 監聽玩家列表
+    const playersRef = ref(db, `rooms/${roomId}/players`);
+    onValue(playersRef, (snapshot) => {
+      const data = snapshot.val() || {};
+      const list = document.getElementById("players");
+      list.innerHTML = "";
+      Object.keys(data).forEach((name) => {
+        const div = document.createElement("div");
+        div.className = "player";
+        div.innerText = "👤 " + name;
+        list.appendChild(div);
+      });
+
+      // 檢查是否達到最大人數
+      currentPlayerCount = Object.keys(data).length;
+      if (currentPlayerCount >= maxPlayers) {
+        startGame(); // 開始遊戲
       }
+    });
+  };
+
+  // ===== 開始遊戲 =====
+  function startGame() {
+    // 讀取題目並顯示
+    const questionsRef = ref(db, 'questions');
+    onValue(questionsRef, (snapshot) => {
+      const questions = snapshot.val();
+      const randomQuestionKey = Object.keys(questions)[Math.floor(Math.random() * Object.keys(questions).length)];
+      const question = questions[randomQuestionKey];
+
+      document.getElementById("questionText").innerText = question.questionText;
+      document.getElementById("leftOption").innerText = "左：" + question.leftOption;
+      document.getElementById("rightOption").innerText = "右：" + question.rightOption;
+      currentQuestionId = randomQuestionKey;  // 記錄當前題目 ID
     });
   }
 
