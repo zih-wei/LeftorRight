@@ -2,13 +2,13 @@
 <html lang="zh-Hant">
 <head>
   <meta charset="UTF-8" />
-  <title>光譜好友猜測遊戲（殘酷2選1版）</title>
+  <title>殘酷2選1版</title>
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <style>
     body {
       font-family: 'Arial', sans-serif;
       padding: 20px;
-      background-color: #f0f8ff; /* 背景顏色 */
+      background-color: #f0f8ff;
       color: #333;
     }
 
@@ -40,7 +40,7 @@
     }
 
     .spectrum button:hover, .guessing button:hover {
-      background-color: #1976D2; /* 按鈕 hover 效果 */
+      background-color: #1976D2;
     }
 
     .player {
@@ -98,7 +98,7 @@
 
 <body>
 
-<h1>🎮 光譜好友猜測遊戲（殘酷2選1版）</h1>
+<h1>🎮 殘酷2選1版</h1>
 
 <!-- ========== 加入房間 ========== -->
 <div id="join">
@@ -118,10 +118,9 @@
   <h2 id="roomTitle"></h2>
 
   <h3>STEP 1｜題目</h3>
-  <p>
-    出門旅行時，我比較偏向<br />
-    【完全排好行程】 ─────────── 【隨走隨玩】
-  </p>
+  <p id="questionText"></p>
+  <p id="leftOption"></p>
+  <p id="rightOption"></p>
 
   <div id="spectrum" class="spectrum">
     <button onclick="submitAnswer(0)">左</button>
@@ -177,8 +176,11 @@
   // ===== 狀態 =====
   let roomId = "";
   let playerName = "";
-  let focusPlayerName = "";  // 新增：焦點玩家名稱
-  let playerScores = {};  // 玩家得分
+  let focusPlayerName = "";
+  let allPlayersAnswered = false;
+  let allPlayersGuessed = false;
+  let playerScores = {};
+  let currentQuestionId = "";
 
   // ===== 加入房間 =====
   window.joinRoom = function () {
@@ -214,44 +216,78 @@
       });
     });
 
+    // 讀取題目並顯示
+    loadQuestion();
+
     // 監聽焦點玩家
     const focusRef = ref(db, `rooms/${roomId}/focusPlayer`);
     onValue(focusRef, (snapshot) => {
       if (snapshot.exists()) {
         focusPlayerName = snapshot.val();
-        document.getElementById("focus").innerText = "🎯 本題焦點人物：" + focusPlayerName;
       }
     });
-
-    // 設置房間活動計時器，30分鐘無活動則清除房間
-    setupRoomCleanup();
   };
+
+  // ===== 讀取並顯示題目 =====
+  function loadQuestion() {
+    const roomRef = ref(db, `rooms/${roomId}`);
+    
+    // 讀取當前房間的題目 ID
+    get(roomRef).then((snapshot) => {
+      const roomData = snapshot.val();
+      if (roomData && roomData.currentQuestionId) {
+        currentQuestionId = roomData.currentQuestionId;
+
+        // 讀取題目內容
+        const questionRef = ref(db, `questions/${currentQuestionId}`);
+        get(questionRef).then((questionSnapshot) => {
+          const questionData = questionSnapshot.val();
+          if (questionData) {
+            // 顯示題目
+            document.getElementById("questionText").innerText = questionData.questionText;
+            document.getElementById("leftOption").innerText = `【${questionData.leftOption}】`;
+            document.getElementById("rightOption").innerText = `【${questionData.rightOption}】`;
+          }
+        });
+      }
+    });
+  }
 
   // ===== 提交光譜答案 =====
   window.submitAnswer = function (value) {
     const answerRef = ref(db, `rooms/${roomId}/answers/${playerName}`);
     set(answerRef, value);
-    document.getElementById("status").innerText = "✅ 已送出答案（不公開）";
-    trySetFocusPlayer();  // 設定焦點玩家
-    startGuessing();  // 開始猜測模式
+    document.getElementById("status").innerText = "✅ 已送出答案";
+    checkAllPlayersAnswered();  // 檢查所有玩家是否選擇答案
   };
 
-  // ===== STEP 2：指定焦點玩家（只做一次） =====
-  function trySetFocusPlayer() {
+  // ===== 檢查所有玩家是否已經選擇答案 =====
+  function checkAllPlayersAnswered() {
     const playersRef = ref(db, `rooms/${roomId}/players`);
-    const focusRef = ref(db, `rooms/${roomId}/focusPlayer`);
+    get(playersRef).then((snapshot) => {
+      const players = snapshot.val();
+      let allAnswered = true;
 
-    get(focusRef).then((snapshot) => {
-      if (snapshot.exists()) return;
-
-      get(playersRef).then((playersSnap) => {
-        const players = playersSnap.val();
-        if (!players) return;
-
-        const firstPlayer = Object.keys(players)[0];
-        set(focusRef, firstPlayer);
+      Object.keys(players).forEach((player) => {
+        const answerRef = ref(db, `rooms/${roomId}/answers/${player}`);
+        get(answerRef).then((answerSnapshot) => {
+          if (!answerSnapshot.exists()) {
+            allAnswered = false;
+          }
+        });
       });
+
+      if (allAnswered && !allPlayersAnswered) {
+        allPlayersAnswered = true;
+        revealFocusPlayer();  // 顯示焦點玩家
+      }
     });
+  }
+
+  // ===== 顯示焦點玩家 =====
+  function revealFocusPlayer() {
+    document.getElementById("focus").innerText = `🎯 本題焦點人物：${focusPlayerName}`;
+    startGuessing();  // 開始猜測
   }
 
   // ===== 開啟猜測模式 =====
@@ -265,10 +301,33 @@
     const guessRef = ref(db, `rooms/${roomId}/guesses/${playerName}`);
     set(guessRef, guessValue);
     document.getElementById("status").innerText = "✅ 已提交猜測";
-    calculateScores();
+    checkAllPlayersGuessed();  // 檢查是否所有玩家已經完成猜測
   };
 
-  // 顯示結果（焦點玩家和猜測）
+  // ===== 檢查所有玩家是否已經完成猜測 =====
+  function checkAllPlayersGuessed() {
+    const playersRef = ref(db, `rooms/${roomId}/players`);
+    get(playersRef).then((snapshot) => {
+      const players = snapshot.val();
+      let allGuessed = true;
+
+      Object.keys(players).forEach((player) => {
+        const guessRef = ref(db, `rooms/${roomId}/guesses/${player}`);
+        get(guessRef).then((guessSnapshot) => {
+          if (!guessSnapshot.exists()) {
+            allGuessed = false;
+          }
+        });
+      });
+
+      if (allGuessed && !allPlayersGuessed) {
+        allPlayersGuessed = true;
+        calculateScores();  // 計算分數並顯示
+      }
+    });
+  }
+
+  // ===== 計算分數 =====
   function calculateScores() {
     const answersRef = ref(db, `rooms/${roomId}/answers`);
     const guessesRef = ref(db, `rooms/${roomId}/guesses`);
@@ -293,7 +352,7 @@
     });
   }
 
-  // 更新分數板
+  // ===== 更新分數板 =====
   function updateScoreboard() {
     const scoreList = document.getElementById("scoreList");
     scoreList.innerHTML = "";
@@ -306,23 +365,6 @@
       scoreList.appendChild(div);
     });
   }
-
-  // 設置房間清理邏輯，30分鐘內無活動則刪除房間
-  function setupRoomCleanup() {
-    const roomRef = ref(db, `rooms/${roomId}`);
-    const lastActivityRef = ref(db, `rooms/${roomId}/lastActivity`);
-    set(lastActivityRef, Date.now());
-
-    setInterval(() => {
-      get(lastActivityRef).then((snapshot) => {
-        if (snapshot.exists() && Date.now() - snapshot.val() > 30 * 60 * 1000) {
-          set(roomRef, null);  // 清除房間資料
-          alert("房間已超過30分鐘無活動，已自動清除！");
-        }
-      });
-    }, 60000);  // 每分鐘檢查一次
-  }
-
 </script>
 
 </body>
