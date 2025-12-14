@@ -2,9 +2,8 @@
 <html lang="zh-Hant">
 <head>
   <meta charset="UTF-8" />
-  <title>光譜好友猜測遊戲</title>
+  <title>殘酷2選1版</title>
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-
   <style>
     body {
       font-family: sans-serif;
@@ -13,19 +12,22 @@
     .hidden {
       display: none;
     }
-    .spectrum button {
+    .spectrum button, .guessing button {
       margin: 4px;
       padding: 10px;
     }
     .player {
       margin: 4px 0;
     }
+    .scoreboard {
+      margin-top: 20px;
+    }
   </style>
 </head>
 
 <body>
 
-<h1>🎮 光譜好友猜測遊戲（原型）</h1>
+<h1>🎮 殘酷2選1版</h1>
 
 <!-- ========== 加入房間 ========== -->
 <div id="join">
@@ -50,18 +52,30 @@
     【完全排好行程】 ─────────── 【隨走隨玩】
   </p>
 
-  <div class="spectrum">
+  <div id="spectrum" class="spectrum">
     <button onclick="submitAnswer(0)">左</button>
-    <button onclick="submitAnswer(1)">偏左</button>
-    <button onclick="submitAnswer(2)">中間</button>
-    <button onclick="submitAnswer(3)">偏右</button>
-    <button onclick="submitAnswer(4)">右</button>
+    <button onclick="submitAnswer(1)">右</button>
+  </div>
+
+  <div id="guessing" class="hidden">
+    <h3>猜測焦點玩家的位置</h3>
+    <button onclick="submitGuess(0)">左</button>
+    <button onclick="submitGuess(1)">右</button>
   </div>
 
   <p id="status"></p>
+  <p id="focus" style="font-size:18px; font-weight:bold;"></p>
+  <p id="actualAnswer"></p>
+  <div id="guesses"></div>
 
   <h3>👥 房內玩家</h3>
   <div id="players"></div>
+
+  <!-- 顯示玩家得分 -->
+  <div id="scoreboard" class="scoreboard">
+    <h3>玩家得分</h3>
+    <div id="scoreList"></div>
+  </div>
 </div>
 
 <!-- ========== Firebase ========== -->
@@ -71,7 +85,8 @@
     getDatabase,
     ref,
     set,
-    onValue
+    onValue,
+    get
   } from "https://www.gstatic.com/firebasejs/9.23.0/firebase-database.js";
 
   // 🔴 你的 Firebase 設定（照原樣放）
@@ -91,6 +106,8 @@
   // ===== 狀態 =====
   let roomId = "";
   let playerName = "";
+  let focusPlayerName = "";  // 新增：焦點玩家名稱
+  let playerScores = {};  // 玩家得分
 
   // ===== 加入房間 =====
   window.joinRoom = function () {
@@ -104,12 +121,12 @@
 
     document.getElementById("join").classList.add("hidden");
     document.getElementById("game").classList.remove("hidden");
-    document.getElementById("roomTitle").innerText =
-      "房間：" + roomId;
+    document.getElementById("roomTitle").innerText = "房間：" + roomId;
 
     const playerRef = ref(db, `rooms/${roomId}/players/${playerName}`);
     set(playerRef, {
-      joinedAt: Date.now()
+      joinedAt: Date.now(),
+      score: 0
     });
 
     // 監聽玩家列表
@@ -125,18 +142,104 @@
         list.appendChild(div);
       });
     });
+
+    // 監聽焦點玩家
+    const focusRef = ref(db, `rooms/${roomId}/focusPlayer`);
+    onValue(focusRef, (snapshot) => {
+      if (snapshot.exists()) {
+        focusPlayerName = snapshot.val();
+        document.getElementById("focus").innerText = "🎯 本題焦點人物：" + focusPlayerName;
+      }
+    });
   };
 
   // ===== 提交光譜答案 =====
   window.submitAnswer = function (value) {
-    const answerRef = ref(
-      db,
-      `rooms/${roomId}/answers/${playerName}`
-    );
+    const answerRef = ref(db, `rooms/${roomId}/answers/${playerName}`);
     set(answerRef, value);
-    document.getElementById("status").innerText =
-      "✅ 已送出答案（不公開）";
+    document.getElementById("status").innerText = "✅ 已送出答案（不公開）";
+    trySetFocusPlayer();  // 設定焦點玩家
+    startGuessing();  // 開始猜測模式
   };
+
+  // ===== STEP 2：指定焦點玩家（只做一次） =====
+  function trySetFocusPlayer() {
+    const playersRef = ref(db, `rooms/${roomId}/players`);
+    const focusRef = ref(db, `rooms/${roomId}/focusPlayer`);
+
+    get(focusRef).then((snapshot) => {
+      if (snapshot.exists()) return;
+
+      get(playersRef).then((playersSnap) => {
+        const players = playersSnap.val();
+        if (!players) return;
+
+        const firstPlayer = Object.keys(players)[0];
+        set(focusRef, firstPlayer);
+      });
+    });
+  }
+
+  // ===== 開啟猜測模式 =====
+  function startGuessing() {
+    document.getElementById("spectrum").classList.add("hidden");
+    document.getElementById("guessing").classList.remove("hidden");
+  }
+
+  // 玩家選擇猜測焦點玩家的光譜位置
+  window.submitGuess = function (guessValue) {
+    const guessRef = ref(db, `rooms/${roomId}/guesses/${playerName}`);
+    set(guessRef, guessValue);
+    document.getElementById("status").innerText = "✅ 已提交猜測";
+
+    // 計算分數
+    calculateScores();
+  };
+
+  // 計算分數
+  function calculateScores() {
+    const answersRef = ref(db, `rooms/${roomId}/answers`);
+    const guessesRef = ref(db, `rooms/${roomId}/guesses`);
+    const playersRef = ref(db, `rooms/${roomId}/players`);
+
+    onValue(answersRef, (snapshot) => {
+      const answers = snapshot.val();
+      onValue(guessesRef, (guessSnapshot) => {
+        const guesses = guessSnapshot.val();
+        if (!answers || !guesses) return;
+
+        // 遍歷每個玩家，計算分數
+        Object.keys(answers).forEach((player) => {
+          let score = 0;
+          // 判斷答案是否與猜測一致
+          if (answers[player] === guesses[player]) score++;
+
+          // 更新分數到 Firebase
+          const playerRef = ref(db, `rooms/${roomId}/players/${player}`);
+          set(playerRef, { score });
+
+          // 更新玩家分數顯示
+          playerScores[player] = score;
+          updateScoreboard();
+        });
+      });
+    });
+  }
+
+  // 更新分數顯示
+  function updateScoreboard() {
+    const scoreList = document.getElementById("scoreList");
+    scoreList.innerHTML = "";
+    const sortedPlayers = Object.keys(playerScores).sort((a, b) => playerScores[b] - playerScores[a]);
+
+    sortedPlayers.forEach((player) => {
+      const div = document.createElement("div");
+      div.className = "player";
+      div.innerText = `${player}: ${playerScores[player]} 分`;
+      scoreList.appendChild(div);
+    });
+  }
+
 </script>
 
 </body>
