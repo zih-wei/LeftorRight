@@ -110,6 +110,10 @@
     暱稱：
     <input id="nameInput" placeholder="你的名字" />
   </p>
+  <p>
+    需要的人數：
+    <input id="maxPlayersInput" type="number" placeholder="最少2人" min="2" />
+  </p>
   <button onclick="joinRoom()">加入房間</button>
 </div>
 
@@ -168,16 +172,20 @@
   // ===== 狀態 =====
   let roomId = "";
   let playerName = "";
+  let maxPlayers = 0;
+  let currentPlayers = 0;
   let focusPlayerName = ""; // 焦點玩家名稱
   let playerScores = {}; // 玩家分數
+  let answersReceived = 0; // 記錄回答的玩家數
 
   // ===== 加入房間 =====
   window.joinRoom = function () {
     roomId = document.getElementById("roomInput").value.trim();
     playerName = document.getElementById("nameInput").value.trim();
+    maxPlayers = parseInt(document.getElementById("maxPlayersInput").value.trim());
 
-    if (!roomId || !playerName) {
-      alert("請輸入房間代碼與暱稱");
+    if (!roomId || !playerName || !maxPlayers) {
+      alert("請輸入房間代碼、暱稱和最大人數");
       return;
     }
 
@@ -195,6 +203,7 @@
     const playersRef = ref(db, `rooms/${roomId}/players`);
     onValue(playersRef, (snapshot) => {
       const data = snapshot.val() || {};
+      currentPlayers = Object.keys(data).length;
       const list = document.getElementById("players");
       list.innerHTML = "";
       Object.keys(data).forEach((name) => {
@@ -203,9 +212,15 @@
         div.innerText = "👤 " + name;
         list.appendChild(div);
       });
-    });
 
-    // 監聽題目和選項
+      if (currentPlayers >= maxPlayers) {
+        startGame();
+      }
+    });
+  };
+
+  // ===== 開始遊戲 =====
+  function startGame() {
     const questionsRef = ref(db, `rooms/${roomId}/questions`);
     onValue(questionsRef, (snapshot) => {
       if (snapshot.exists()) {
@@ -214,24 +229,22 @@
         document.getElementById("question").innerHTML = question.question + "<br/>【" + question.options[0] + "】 ─────────── 【" + question.options[1] + "】";
       }
     });
-
-    // 監聽焦點玩家
-    const focusRef = ref(db, `rooms/${roomId}/focusPlayer`);
-    onValue(focusRef, (snapshot) => {
-      if (snapshot.exists()) {
-        focusPlayerName = snapshot.val();
-        document.getElementById("focus").innerText = "🎯 本題焦點人物：" + focusPlayerName;
-      }
-    });
-  };
+  }
 
   // ===== 提交答案 =====
   window.submitAnswer = function (value) {
     const answerRef = ref(db, `rooms/${roomId}/answers/${playerName}`);
     set(answerRef, value);
-    document.getElementById("status").innerText = "✅ 已送出答案（不公開）";
-    trySetFocusPlayer(); // 設定焦點玩家
-    startGuessing(); // 開始猜測模式
+    answersReceived++;
+
+    if (answersReceived === currentPlayers) {
+      setTimeout(() => {
+        trySetFocusPlayer(); // 設定焦點玩家
+        startGuessing(); // 開始猜測模式
+      }, 1000);
+    }
+
+    document.getElementById("status").innerText = "✅ 已送出答案";
   };
 
   // ===== 設定焦點玩家 =====
@@ -292,6 +305,7 @@
         });
 
         updateScoreboard();
+        setTimeout(startGame, 2000); // 下一題
       });
     });
   }
