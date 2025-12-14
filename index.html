@@ -1,11 +1,51 @@
 <!DOCTYPE html>
-<html>
+<html lang="en">
 <head>
   <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>光譜好友遊戲</title>
+
+  <!-- Firebase SDK via CDN -->
+  <script type="module">
+    // Import the functions you need from the SDKs you need
+    import { initializeApp } from "https://www.gstatic.com/firebasejs/9.23.0/firebase-app.js";
+    import { getAnalytics } from "https://www.gstatic.com/firebasejs/9.23.0/firebase-analytics.js";
+    import { getDatabase, ref, set } from "https://www.gstatic.com/firebasejs/9.23.0/firebase-database.js";
+    
+    // Firebase configuration
+    const firebaseConfig = {
+      apiKey: "AIzaSyAd5o0ZVF5D-_jZ_e_JfV4bLtJExFemQ2E",
+      authDomain: "leftorright-2a953.firebaseapp.com",
+      projectId: "leftorright-2a953",
+      storageBucket: "leftorright-2a953.firebasestorage.app",
+      messagingSenderId: "360483191218",
+      appId: "1:360483191218:web:dc4042859ba6e8fd40ccab",
+      measurementId: "G-9XD19M5R5D"
+    };
+
+    // Initialize Firebase
+    const app = initializeApp(firebaseConfig);
+    const analytics = getAnalytics(app);
+
+    // Get a reference to the database service
+    const database = getDatabase(app);
+
+    // Write data to Firebase (example)
+    function savePlayerSelection(playerId, selection) {
+      const playerRef = ref(database, 'players/' + playerId);
+      set(playerRef, {
+        selection: selection
+      });
+    }
+
+    // Example: Save a player's selection
+    savePlayerSelection('player1', 'left');
+  </script>
 </head>
 <body>
   <h1>歡迎來玩光譜好友遊戲</h1>
   <p>這裡會放題目跟光譜選項</p>
+
+  <!-- Add more of your game UI and logic here -->
 </body>
 </html>
