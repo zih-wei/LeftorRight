@@ -1,51 +1,143 @@
 <!DOCTYPE html>
-<html lang="en">
+<html lang="zh-Hant">
 <head>
-  <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>光譜好友遊戲</title>
+  <meta charset="UTF-8" />
+  <title>光譜好友猜測遊戲</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
 
-  <!-- Firebase SDK via CDN -->
-  <script type="module">
-    // Import the functions you need from the SDKs you need
-    import { initializeApp } from "https://www.gstatic.com/firebasejs/9.23.0/firebase-app.js";
-    import { getAnalytics } from "https://www.gstatic.com/firebasejs/9.23.0/firebase-analytics.js";
-    import { getDatabase, ref, set } from "https://www.gstatic.com/firebasejs/9.23.0/firebase-database.js";
-    
-    // Firebase configuration
-    const firebaseConfig = {
-      apiKey: "AIzaSyAd5o0ZVF5D-_jZ_e_JfV4bLtJExFemQ2E",
-      authDomain: "leftorright-2a953.firebaseapp.com",
-      projectId: "leftorright-2a953",
-      storageBucket: "leftorright-2a953.firebasestorage.app",
-      messagingSenderId: "360483191218",
-      appId: "1:360483191218:web:dc4042859ba6e8fd40ccab",
-      measurementId: "G-9XD19M5R5D"
-    };
+  <style>
+    body {
+      font-family: sans-serif;
+      padding: 20px;
+    }
+    .hidden {
+      display: none;
+    }
+    .spectrum button {
+      margin: 4px;
+      padding: 10px;
+    }
+    .player {
+      margin: 4px 0;
+    }
+  </style>
+</head>
 
-    // Initialize Firebase
-    const app = initializeApp(firebaseConfig);
-    const analytics = getAnalytics(app);
+<body>
 
-    // Get a reference to the database service
-    const database = getDatabase(app);
+<h1>🎮 光譜好友猜測遊戲（原型）</h1>
 
-    // Write data to Firebase (example)
-    function savePlayerSelection(playerId, selection) {
-      const playerRef = ref(database, 'players/' + playerId);
-      set(playerRef, {
-        selection: selection
-      });
+<!-- ========== 加入房間 ========== -->
+<div id="join">
+  <p>
+    房間代碼：
+    <input id="roomInput" placeholder="ABCD" />
+  </p>
+  <p>
+    暱稱：
+    <input id="nameInput" placeholder="你的名字" />
+  </p>
+  <button onclick="joinRoom()">加入房間</button>
+</div>
+
+<!-- ========== 遊戲畫面 ========== -->
+<div id="game" class="hidden">
+  <h2 id="roomTitle"></h2>
+
+  <h3>STEP 1｜題目</h3>
+  <p>
+    出門旅行時，我比較偏向<br />
+    【完全排好行程】 ─────────── 【隨走隨玩】
+  </p>
+
+  <div class="spectrum">
+    <button onclick="submitAnswer(0)">左</button>
+    <button onclick="submitAnswer(1)">偏左</button>
+    <button onclick="submitAnswer(2)">中間</button>
+    <button onclick="submitAnswer(3)">偏右</button>
+    <button onclick="submitAnswer(4)">右</button>
+  </div>
+
+  <p id="status"></p>
+
+  <h3>👥 房內玩家</h3>
+  <div id="players"></div>
+</div>
+
+<!-- ========== Firebase ========== -->
+<script type="module">
+  import { initializeApp } from "https://www.gstatic.com/firebasejs/9.23.0/firebase-app.js";
+  import {
+    getDatabase,
+    ref,
+    set,
+    onValue
+  } from "https://www.gstatic.com/firebasejs/9.23.0/firebase-database.js";
+
+  // 🔴 你的 Firebase 設定（照原樣放）
+  const firebaseConfig = {
+    apiKey: "AIzaSyAd5o0ZVF5D-_jZ_e_JfV4bLtJExFemQ2E",
+    authDomain: "leftorright-2a953.firebaseapp.com",
+    databaseURL: "https://leftorright-2a953-default-rtdb.firebaseio.com",
+    projectId: "leftorright-2a953",
+    storageBucket: "leftorright-2a953.firebasestorage.app",
+    messagingSenderId: "360483191218",
+    appId: "1:360483191218:web:dc4042859ba6e8fd40ccab"
+  };
+
+  const app = initializeApp(firebaseConfig);
+  const db = getDatabase(app);
+
+  // ===== 狀態 =====
+  let roomId = "";
+  let playerName = "";
+
+  // ===== 加入房間 =====
+  window.joinRoom = function () {
+    roomId = document.getElementById("roomInput").value.trim();
+    playerName = document.getElementById("nameInput").value.trim();
+
+    if (!roomId || !playerName) {
+      alert("請輸入房間代碼與暱稱");
+      return;
     }
 
-    // Example: Save a player's selection
-    savePlayerSelection('player1', 'left');
-  </script>
-</head>
-<body>
-  <h1>歡迎來玩光譜好友遊戲</h1>
-  <p>這裡會放題目跟光譜選項</p>
+    document.getElementById("join").classList.add("hidden");
+    document.getElementById("game").classList.remove("hidden");
+    document.getElementById("roomTitle").innerText =
+      "房間：" + roomId;
 
-  <!-- Add more of your game UI and logic here -->
+    const playerRef = ref(db, `rooms/${roomId}/players/${playerName}`);
+    set(playerRef, {
+      joinedAt: Date.now()
+    });
+
+    // 監聽玩家列表
+    const playersRef = ref(db, `rooms/${roomId}/players`);
+    onValue(playersRef, (snapshot) => {
+      const data = snapshot.val() || {};
+      const list = document.getElementById("players");
+      list.innerHTML = "";
+      Object.keys(data).forEach((name) => {
+        const div = document.createElement("div");
+        div.className = "player";
+        div.innerText = "👤 " + name;
+        list.appendChild(div);
+      });
+    });
+  };
+
+  // ===== 提交光譜答案 =====
+  window.submitAnswer = function (value) {
+    const answerRef = ref(
+      db,
+      `rooms/${roomId}/answers/${playerName}`
+    );
+    set(answerRef, value);
+    document.getElementById("status").innerText =
+      "✅ 已送出答案（不公開）";
+  };
+</script>
+
 </body>
 </html>
