@@ -2,32 +2,103 @@
 <html lang="zh-Hant">
 <head>
   <meta charset="UTF-8" />
-  <title>殘酷2選1版</title>
+  <title>光譜好友猜測遊戲（殘酷2選1版）</title>
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <style>
     body {
-      font-family: sans-serif;
+      font-family: 'Arial', sans-serif;
       padding: 20px;
+      background-color: #f0f8ff; /* 背景顏色 */
+      color: #333;
     }
+
+    h1 {
+      text-align: center;
+      color: #4CAF50;
+      font-size: 2.5em;
+    }
+
+    h2, h3 {
+      color: #2196F3;
+      text-align: center;
+    }
+
     .hidden {
       display: none;
     }
+
     .spectrum button, .guessing button {
-      margin: 4px;
-      padding: 10px;
+      margin: 10px;
+      padding: 12px 24px;
+      font-size: 1.1em;
+      border-radius: 5px;
+      background-color: #2196F3;
+      color: white;
+      border: none;
+      cursor: pointer;
+      transition: background-color 0.3s;
     }
+
+    .spectrum button:hover, .guessing button:hover {
+      background-color: #1976D2; /* 按鈕 hover 效果 */
+    }
+
     .player {
-      margin: 4px 0;
+      margin: 6px 0;
+      font-size: 1.1em;
+      background-color: #eeeeee;
+      padding: 8px;
+      border-radius: 5px;
     }
-    .scoreboard {
+
+    #scoreboard {
       margin-top: 20px;
+      padding: 10px;
+      border-radius: 10px;
+      background-color: #ffffff;
+      box-shadow: 0px 4px 6px rgba(0, 0, 0, 0.1);
+    }
+
+    #scoreboard h3 {
+      color: #4CAF50;
+    }
+
+    #scoreList div {
+      padding: 8px;
+      font-size: 1.1em;
+      margin: 6px 0;
+      background-color: #f7f7f7;
+      border-radius: 5px;
+      border-left: 5px solid #2196F3;
+    }
+
+    #players {
+      margin-top: 20px;
+      text-align: center;
+    }
+
+    #join, #game {
+      text-align: center;
+    }
+
+    #join input, #game input {
+      margin: 8px 0;
+      padding: 10px;
+      font-size: 1em;
+      border-radius: 5px;
+      width: 200px;
+      border: 1px solid #ccc;
+    }
+
+    #roomInput, #nameInput {
+      width: 250px;
     }
   </style>
 </head>
 
 <body>
 
-<h1>🎮 殘酷2選1版</h1>
+<h1>🎮 光譜好友猜測遊戲（殘酷2選1版）</h1>
 
 <!-- ========== 加入房間 ========== -->
 <div id="join">
@@ -151,6 +222,9 @@
         document.getElementById("focus").innerText = "🎯 本題焦點人物：" + focusPlayerName;
       }
     });
+
+    // 設置房間活動計時器，30分鐘無活動則清除房間
+    setupRoomCleanup();
   };
 
   // ===== 提交光譜答案 =====
@@ -191,42 +265,35 @@
     const guessRef = ref(db, `rooms/${roomId}/guesses/${playerName}`);
     set(guessRef, guessValue);
     document.getElementById("status").innerText = "✅ 已提交猜測";
-
-    // 計算分數
     calculateScores();
   };
 
-  // 計算分數
+  // 顯示結果（焦點玩家和猜測）
   function calculateScores() {
     const answersRef = ref(db, `rooms/${roomId}/answers`);
     const guessesRef = ref(db, `rooms/${roomId}/guesses`);
-    const playersRef = ref(db, `rooms/${roomId}/players`);
-
+    
     onValue(answersRef, (snapshot) => {
+      if (!snapshot.exists()) return;
       const answers = snapshot.val();
       onValue(guessesRef, (guessSnapshot) => {
+        if (!guessSnapshot.exists()) return;
         const guesses = guessSnapshot.val();
-        if (!answers || !guesses) return;
 
-        // 遍歷每個玩家，計算分數
         Object.keys(answers).forEach((player) => {
           let score = 0;
-          // 判斷答案是否與猜測一致
-          if (answers[player] === guesses[player]) score++;
-
-          // 更新分數到 Firebase
-          const playerRef = ref(db, `rooms/${roomId}/players/${player}`);
-          set(playerRef, { score });
-
-          // 更新玩家分數顯示
+          if (answers[player] === guesses[player]) {
+            score++;
+          }
           playerScores[player] = score;
-          updateScoreboard();
         });
+
+        updateScoreboard();
       });
     });
   }
 
-  // 更新分數顯示
+  // 更新分數板
   function updateScoreboard() {
     const scoreList = document.getElementById("scoreList");
     scoreList.innerHTML = "";
@@ -238,6 +305,22 @@
       div.innerText = `${player}: ${playerScores[player]} 分`;
       scoreList.appendChild(div);
     });
+  }
+
+  // 設置房間清理邏輯，30分鐘內無活動則刪除房間
+  function setupRoomCleanup() {
+    const roomRef = ref(db, `rooms/${roomId}`);
+    const lastActivityRef = ref(db, `rooms/${roomId}/lastActivity`);
+    set(lastActivityRef, Date.now());
+
+    setInterval(() => {
+      get(lastActivityRef).then((snapshot) => {
+        if (snapshot.exists() && Date.now() - snapshot.val() > 30 * 60 * 1000) {
+          set(roomRef, null);  // 清除房間資料
+          alert("房間已超過30分鐘無活動，已自動清除！");
+        }
+      });
+    }, 60000);  // 每分鐘檢查一次
   }
 
 </script>
